@@ -24,6 +24,10 @@ import java_cup.runtime.Symbol;
  *  lexer actions should go here.  Don't remove or modify anything that
  *  was there initially.  */
 
+    // Integer for counting nested comments
+    int nestedComments = 0;
+
+    bool nullInString = false;
     // Max size of string constants
     static int MAX_STR_CONST = 1025;
 
@@ -32,17 +36,17 @@ import java_cup.runtime.Symbol;
 
     private int curr_lineno = 1;
     int get_curr_lineno() {
-	return curr_lineno;
+	    return curr_lineno;
     }
 
     private AbstractSymbol filename;
 
     void set_filename(String fname) {
-	filename = AbstractTable.stringtable.addString(fname);
+	    filename = AbstractTable.stringtable.addString(fname);
     }
 
     AbstractSymbol curr_filename() {
-	return filename;
+	    return filename;
     }
 %}
 
@@ -67,14 +71,15 @@ import java_cup.runtime.Symbol;
  */
 
     switch(yy_lexical_state) {
-    case YYINITIAL:
-	/* nothing special to do in the initial state */
-	break;
-	/* If necessary, add code for other states here, e.g:
-	   case COMMENT:
-	   ...
-	   break;
-	*/
+        case YYINITIAL:
+        /* nothing special to do in the initial state */
+            break;
+        case STRING:
+            yybegin(YYINITIAL); 
+            return new Symbol(TokenConstants.ERROR, "EOF in string constant");
+        case BLOCK_COMMENT:
+            yybegin(YYINITIAL); 
+            return new Symbol(TokenConstants.ERROR, "EOF in comment.");
     }
     return new Symbol(TokenConstants.EOF);
 %eofval}
@@ -82,11 +87,123 @@ import java_cup.runtime.Symbol;
 %class CoolLexer
 %cup
 
+%state STRING
+%state BLOCK_COMMENTS
+%state INLINE_COMMENTS
+
 %%
 /*regular expression rules*/
-/*String*/
+/*The Cool Reference Manual 10.2 Strings
 
-/*Comments*/
+> If a string contains an unescaped newline, report that error as ‘‘Unterminated string constant’’
+and resume lexing at the beginning of the next line—we assume the programmer simply forgot the
+close-quote.
+
+> String constant too long
+
+String contains null character
+
+> EOF in string constant
+
+\c -> c
+
+\b backspace
+\t tab
+\n newline
+\f formfeed
+*/
+<YYINITIAL> \n          { curr_lineno++; }
+<YYINITIAL> \"   {
+    /* new string, clean string buffer */
+    string_buf.delete(0, string_buf.length());
+    nullInString=false;
+    yybegin(STRING); 
+}
+
+<STRING> \" { 
+    // if an escape character appears before a quote, we must put a quote into the string
+    if(string_buf.length()>0 && string_buf.charAt(string_buf.length()-1)=='\\') {
+        string_buf.setCharAt(string_buf.length()-1, '\"');
+    } else {
+        // it is the end of string
+        if(string_buf.length()>=MAX_STR_CONST) {
+            yybegin(YYINITIAL);
+            return new Symbol(TokenConstants.ERROR, "String constant too long");
+        } else if(nullInString) {
+            yybegin(YYINITIAL);
+            return new Symbol(TokenConstants.ERROR, "String contains null character");
+        } else {
+            yybegin(YYINITIAL); 
+            return new Symbol(TokenConstants.STR_CONST, AbstractTable.stringtable.addString(string_buf.toString())); 
+        }
+    }
+}
+
+<STRING> \n {
+    // if an escape character appears before a \n, we must put \n into the string
+    if(string_buf.length()>0 && string_buf.charAt(string_buf.length()-1)=='\\') {
+        curr_lineno++;
+        string_buf.setCharAt(string_buf.length()-1, '\n');
+    } else {
+        curr_lineno++;
+        yybegin(YYINITIAL);
+        return new Symbol(TokenConstants.ERROR, "Unterminated string constant");
+    }
+}
+
+<STRING> [^\n\"] {
+    // process all character one at a time, except for \n or "
+    if (string_buf.length() == 0) {
+        string_buf.append(yytext());
+    }else {
+        if(yytext().charAt(0)=='\0') {
+            nullInString=true;
+        } else {
+            int length=string_buf.length();
+            // previous char is escape
+            if(string_buf.charAt(string_buf.length()-1)=='\\') {
+                switch(yytext().charAt(0)) {
+                case 'b':
+                    string_buf.setCharAt(length-1, '\b');
+                    break;
+                case 't':
+                    string_buf.setCharAt(length-1, '\t');
+                    break;
+                case 'n':
+                    string_buf.setCharAt(length-1, '\n');
+                    break;
+                case 'f':
+                    string_buf.setCharAt(length-1, '\f');
+                    break;
+                default:
+                    string_buf.setCharAt(length-1, yytext().charAt(0));
+                }
+            }else {
+                string_buf.append(yytext());
+            }
+        }
+    }
+}
+
+/*The Cool Reference Manual 10.3 Comments*/
+<YYINITIAL> "(*"                { yybegin(BLOCK_COMMENT); }
+<YYINITIAL> "*)"                { return new Symbol(TokenConstants.ERROR,"Mismatched '*)'"); }
+
+<BLOCK_COMMENT> "(*"            { nestedComments++ }
+<BLOCK_COMMENT> "*)"            { 
+    if nestedComments == 0 {
+        yybegin(YYINITIAL);
+    }else {
+        nestedComments--;
+    }
+}
+<BLOCK_COMMENT> [^\*\(\)\n]*     { /* in block comments, skip all character except for * ( ) \n */ }
+<BLOCK_COMMENT> [\(\)\*]         { /* skill single * ( ) as well */}
+<BLOCK_COMMENT> \n               { curr_lineno++; }
+
+<YYINITIAL> "--"                { yybegin(INLINE_COMMENTS); }
+<INLINE_COMMENTS> \n            { curr_lineno++; yybegin(YYINITIAL); }
+<INLINE_COMMENTS> .*            { }
 
 /*The Cool Reference Manual 10.4 Keywords*/
 <YYINITIAL> [cC][lL][aA][sS][sS]             { return new Symbol(TokenConstants.CLASS); }
@@ -112,6 +229,16 @@ import java_cup.runtime.Symbol;
 /*The Cool Reference Manual 10.5 White Space*/
 <YYINITIAL> [ \n\f\r\t\v]+ {}
 
+/*The Cool Reference Manual 10.1 Integers, Identifiers, and Special Notation*/
+/*Integer*/
+<YYINITIAL> [0-9]*             { return new Symbol(TokenConstants.INT_CONST, AbstractTable.inttable.addString(yytext())); }
+
+/*Typed identifiers*/
+<YYINITIAL> [A-Z][_a-zA-Z0-9]* { return new Symbol(TokenConstants.TYPEID, AbstractTable.idtable.addString(yytext())); }
+
+/*Object identifiers*/
+<YYINITIAL> [a-z][_a-zA-Z0-9]* { return new Symbol(TokenConstants.OBJECTID, AbstractTable.idtable.addString(yytext())); }
+
 /*The Cool Reference Manual Figure 1*/
 <YYINITIAL>"=>"			{ /* Sample lexical rule for "=>" arrow.
                                      Further lexical rules should be defined
@@ -136,8 +263,8 @@ import java_cup.runtime.Symbol;
 <YYINITIAL> "@"   { return new Symbol(TokenConstants.AT);     }
 <YYINITIAL> "~"   { return new Symbol(TokenConstants.NEG);    }
 
-.                       { /* This rule should be the very last
-                                in your lexical specification and
-                                will match match everything not
-                                matched by other lexical rules. */
-                            System.err.println("LEXER BUG - UNMATCHED: " + yytext()); }
+.                 { /* This rule should be the very last
+                            in your lexical specification and
+                            will match match everything not
+                            matched by other lexical rules. */
+                        System.err.println("LEXER BUG - UNMATCHED: " + yytext()); }
