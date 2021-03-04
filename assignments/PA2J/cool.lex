@@ -16,7 +16,6 @@ https://web.stanford.edu/class/archive/cs/cs143/cs143.1112/javadoc/java_cup/
 import java_cup.runtime.Symbol;
 
 %%
-/* JLex directives */
 %{
 
 /*  Stuff enclosed in %{ %} is copied verbatim to the lexer class
@@ -27,7 +26,7 @@ import java_cup.runtime.Symbol;
     // Integer for counting nested comments
     int nestedComments = 0;
 
-    bool nullInString = false;
+    boolean nullInString = false;
     // Max size of string constants
     static int MAX_STR_CONST = 1025;
 
@@ -77,7 +76,7 @@ import java_cup.runtime.Symbol;
         case STRING:
             yybegin(YYINITIAL); 
             return new Symbol(TokenConstants.ERROR, "EOF in string constant");
-        case BLOCK_COMMENT:
+        case BLOCK_COMMENTS:
             yybegin(YYINITIAL); 
             return new Symbol(TokenConstants.ERROR, "EOF in comment.");
     }
@@ -92,26 +91,6 @@ import java_cup.runtime.Symbol;
 %state INLINE_COMMENTS
 
 %%
-/*regular expression rules*/
-/*The Cool Reference Manual 10.2 Strings
-
-> If a string contains an unescaped newline, report that error as ‘‘Unterminated string constant’’
-and resume lexing at the beginning of the next line—we assume the programmer simply forgot the
-close-quote.
-
-> String constant too long
-
-String contains null character
-
-> EOF in string constant
-
-\c -> c
-
-\b backspace
-\t tab
-\n newline
-\f formfeed
-*/
 <YYINITIAL> \n          { curr_lineno++; }
 <YYINITIAL> \"   {
     /* new string, clean string buffer */
@@ -185,27 +164,25 @@ String contains null character
     }
 }
 
-/*The Cool Reference Manual 10.3 Comments*/
-<YYINITIAL> "(*"                { yybegin(BLOCK_COMMENT); }
+<YYINITIAL> "(*"                { yybegin(BLOCK_COMMENTS); }
 <YYINITIAL> "*)"                { return new Symbol(TokenConstants.ERROR,"Mismatched '*)'"); }
 
-<BLOCK_COMMENT> "(*"            { nestedComments++ }
-<BLOCK_COMMENT> "*)"            { 
-    if nestedComments == 0 {
+<BLOCK_COMMENTS> "(*"            { nestedComments++; }
+<BLOCK_COMMENTS> "*)"            { 
+    if (nestedComments == 0) {
         yybegin(YYINITIAL);
     }else {
         nestedComments--;
     }
 }
-<BLOCK_COMMENT> [^\*\(\)\n]*     { /* in block comments, skip all character except for * ( ) \n */ }
-<BLOCK_COMMENT> [\(\)\*]         { /* skill single * ( ) as well */}
-<BLOCK_COMMENT> \n               { curr_lineno++; }
+<BLOCK_COMMENTS> [^\*\(\)\n]*     { /* in block comments, skip all character except for * ( ) \n */ }
+<BLOCK_COMMENTS> [\(\)\*]         { /* skill single * ( ) as well */}
+<BLOCK_COMMENTS> \n               { curr_lineno++; }
 
 <YYINITIAL> "--"                { yybegin(INLINE_COMMENTS); }
 <INLINE_COMMENTS> \n            { curr_lineno++; yybegin(YYINITIAL); }
 <INLINE_COMMENTS> .*            { }
 
-/*The Cool Reference Manual 10.4 Keywords*/
 <YYINITIAL> [cC][lL][aA][sS][sS]             { return new Symbol(TokenConstants.CLASS); }
 <YYINITIAL> [eE][lL][sS][eE]                 { return new Symbol(TokenConstants.ELSE); }
 <YYINITIAL> [fF][iI]                         { return new Symbol(TokenConstants.FI); }
@@ -226,20 +203,13 @@ String contains null character
 <YYINITIAL> [t][rR][uU][eE]                  { return new Symbol(TokenConstants.BOOL_CONST, new Boolean(true)); }
 <YYINITIAL> [f][aA][lL][sS][eE]              { return new Symbol(TokenConstants.BOOL_CONST, new Boolean(false)); }
 
-/*The Cool Reference Manual 10.5 White Space*/
-<YYINITIAL> [ \n\f\r\t\v]+ {}
+<YYINITIAL> [ \n\f\r\t\v]+ { /*White space*/}
 
-/*The Cool Reference Manual 10.1 Integers, Identifiers, and Special Notation*/
-/*Integer*/
-<YYINITIAL> [0-9]*             { return new Symbol(TokenConstants.INT_CONST, AbstractTable.inttable.addString(yytext())); }
+<YYINITIAL> [0-9]*             { /*Integer*/ return new Symbol(TokenConstants.INT_CONST, AbstractTable.inttable.addString(yytext())); }
+<YYINITIAL> [A-Z][_a-zA-Z0-9]* { /*Typed identifiers*/ return new Symbol(TokenConstants.TYPEID, AbstractTable.idtable.addString(yytext())); }
 
-/*Typed identifiers*/
-<YYINITIAL> [A-Z][_a-zA-Z0-9]* { return new Symbol(TokenConstants.TYPEID, AbstractTable.idtable.addString(yytext())); }
+<YYINITIAL> [a-z][_a-zA-Z0-9]* { /*Object identifiers*/ return new Symbol(TokenConstants.OBJECTID, AbstractTable.idtable.addString(yytext())); }
 
-/*Object identifiers*/
-<YYINITIAL> [a-z][_a-zA-Z0-9]* { return new Symbol(TokenConstants.OBJECTID, AbstractTable.idtable.addString(yytext())); }
-
-/*The Cool Reference Manual Figure 1*/
 <YYINITIAL>"=>"			{ /* Sample lexical rule for "=>" arrow.
                                      Further lexical rules should be defined
                                      here, after the last %% separator */
