@@ -26,6 +26,7 @@ import java_cup.runtime.Symbol;
     // Integer for counting nested comments
     int nestedComments = 0;
 
+    boolean escaped = false;
     boolean nullInString = false;
     // Max size of string constants
     static int MAX_STR_CONST = 1025;
@@ -101,7 +102,8 @@ import java_cup.runtime.Symbol;
 
 <STRING> \" { 
     // if an escape character appears before a quote, we must put a quote into the string
-    if(string_buf.length()>0 && string_buf.charAt(string_buf.length()-1)=='\\') {
+    if(string_buf.length()>0 && escaped) {
+        escaped = false;
         string_buf.setCharAt(string_buf.length()-1, '\"');
     } else {
         // it is the end of string
@@ -120,11 +122,11 @@ import java_cup.runtime.Symbol;
 
 <STRING> \n {
     // if an escape character appears before a \n, we must put \n into the string
-    if(string_buf.length()>0 && string_buf.charAt(string_buf.length()-1)=='\\') {
-        curr_lineno++;
+    curr_lineno++;
+    if(string_buf.length()>0 && escaped) {
+        escaped = false;
         string_buf.setCharAt(string_buf.length()-1, '\n');
     } else {
-        curr_lineno++;
         yybegin(YYINITIAL);
         return new Symbol(TokenConstants.ERROR, "Unterminated string constant");
     }
@@ -134,32 +136,39 @@ import java_cup.runtime.Symbol;
     // process all character one at a time, except for \n or "
     if (string_buf.length() == 0) {
         string_buf.append(yytext());
+        if (yytext().charAt(0) == '\\') {
+            escaped = true;
+        }
     }else {
         if(yytext().charAt(0)=='\0') {
             nullInString=true;
-        } else {
+        } else if (escaped == false && yytext().charAt(0) == '\\') {
+            escaped = true;
+            string_buf.append(yytext().charAt(0));
+        } else if (escaped) {
             int length=string_buf.length();
-            // previous char is escape
-            if(string_buf.charAt(string_buf.length()-1)=='\\') {
-                switch(yytext().charAt(0)) {
-                case 'b':
-                    string_buf.setCharAt(length-1, '\b');
-                    break;
-                case 't':
-                    string_buf.setCharAt(length-1, '\t');
-                    break;
-                case 'n':
-                    string_buf.setCharAt(length-1, '\n');
-                    break;
-                case 'f':
-                    string_buf.setCharAt(length-1, '\f');
-                    break;
-                default:
-                    string_buf.setCharAt(length-1, yytext().charAt(0));
-                }
-            }else {
-                string_buf.append(yytext());
+            switch(yytext().charAt(0)) {
+            case 'b':
+                string_buf.setCharAt(length-1, '\b');
+                break;
+            case 't':
+                string_buf.setCharAt(length-1, '\t');
+                break;
+            case 'n':
+                string_buf.setCharAt(length-1, '\n');
+                break;
+            case 'f':
+                string_buf.setCharAt(length-1, '\f');
+                break;
+            case '\\':
+                // escpae an escape character, in the string it is just a single \
+                break;
+            default:
+                string_buf.setCharAt(length-1, yytext().charAt(0));
             }
+            escaped = false;
+        }else {
+            string_buf.append(yytext());
         }
     }
 }
@@ -203,7 +212,7 @@ import java_cup.runtime.Symbol;
 <YYINITIAL> [t][rR][uU][eE]                  { return new Symbol(TokenConstants.BOOL_CONST, new Boolean(true)); }
 <YYINITIAL> [f][aA][lL][sS][eE]              { return new Symbol(TokenConstants.BOOL_CONST, new Boolean(false)); }
 
-<YYINITIAL> [ \n\f\r\t\v]+ { /*White space*/}
+<YYINITIAL> [ \n\f\r\t\x0B]+ { /*White space*/ }
 
 <YYINITIAL> [0-9]*             { /*Integer*/ return new Symbol(TokenConstants.INT_CONST, AbstractTable.inttable.addString(yytext())); }
 <YYINITIAL> [A-Z][_a-zA-Z0-9]* { /*Typed identifiers*/ return new Symbol(TokenConstants.TYPEID, AbstractTable.idtable.addString(yytext())); }
@@ -237,4 +246,4 @@ import java_cup.runtime.Symbol;
                             in your lexical specification and
                             will match match everything not
                             matched by other lexical rules. */
-                        System.err.println("LEXER BUG - UNMATCHED: " + yytext()); }
+                    return new Symbol(TokenConstants.ERROR, new String(yytext())); }
