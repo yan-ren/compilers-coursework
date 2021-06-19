@@ -1,7 +1,7 @@
 # SOE-YCSCS1/CS143: Compilers, Stanford University
 This repository contains the assignment implementation of SOE-YCSCS1/CS143 Compilers, Stanford University
 ## Setup
-Following is the version of ubuntu I used for all assignment, I directly setup the environment on this machine
+Below is the version of ubuntu I used for all assignments, I directly setup the environment on this machine
 ```
 Distributor ID:	Ubuntu
 Description:	Ubuntu 16.04.7 LTS
@@ -41,7 +41,7 @@ PATH=/usr/class/cs143/cool/bin:$PATH
 ## PA2J
 All project files are in ./assignments/PA2J, includes necessary lib to run following tests
 
-./assignments/java_cup is needed when using pa1-grading.pl, otherwise will see java_cup.runtime.Scanner cannot find
+./assignments/java_cup is needed when using pa1-grading.pl, otherwise will see error: java_cup.runtime.Scanner cannot find
 + Compile lextest program
 ```
 make lexer
